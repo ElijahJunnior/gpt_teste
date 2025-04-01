@@ -1,0 +1,10 @@
+/node_modules
+/dist
+/coverage
+/tmp
+.env
+.env.local
+ormconfig.json
+docker-compose.yml
+yarn-error.log
+!.gitkeep
