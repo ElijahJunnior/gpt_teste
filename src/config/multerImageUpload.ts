@@ -11,7 +11,7 @@ export default {
     filename: (req, file, cb) => {
       const [, file_extension] = file.mimetype.split("/");
 
-      const file_name = uuid() + ("." + file_extension ?? "");
+      const file_name = uuid() + "." + (file_extension ?? "");
 
       return cb(null, file_name);
     },
