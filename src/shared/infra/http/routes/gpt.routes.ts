@@ -22,85 +22,94 @@ gptRoutes.post("/image/edit", uploadImage.single("img"), async (req, res) => {
     apiKey: process.env.OPENAI_API_KEY ?? "", // Defina sua chave no .env
   });
 
-  let pngPath = "";
+  if (req.file == null) {
+    return res.status(400).json({ error: "Image not found" });
+  }
 
-  if (req.file != null) {
+  let new_img_path = "";
+  let mask_path = "";
+
+  try {
+    const original_img_buffer = fs.readFileSync(req.file.path);
+
+    const new_img_buffer = await sharp(original_img_buffer)
+      .resize(1024, 1024, {
+        fit: "cover",
+      })
+      .ensureAlpha()
+      .toFormat("png")
+      .toBuffer();
+
+    const { fileTypeFromBuffer } = await loadEsm<typeof import("file-type")>(
+      "file-type"
+    );
+
+    const file_type = await fileTypeFromBuffer(new_img_buffer);
+
+    const [, file_extension] = (file_type?.mime ?? "/").split("/");
+
+    new_img_path = `${mainConfig.temp_folder}/${uuid()}.${file_extension}`;
+
+    fs.writeFileSync(new_img_path, new_img_buffer);
+
+    const { height, width } = await sharp(new_img_buffer).metadata();
+
+    mask_path = `${mainConfig.temp_folder}/${uuid()}.png`;
+
+    await sharp({
+      create: {
+        width: width ?? 1024,
+        height: height ?? 1024,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toFile(mask_path);
+
+    const img_buffer = fs.createReadStream(new_img_path);
+    const mask_buffer = fs.createReadStream(mask_path);
+
+    // prompt: "Transforme essa imagem em um estilo cyberpunk vibrante",
+
+    const response = await openai.images.edit({
+      image: img_buffer,
+      mask: mask_buffer,
+      prompt: "Transforme essa foto em ghibli",
+      // model: "dall-e-2",
+      // n: 1,
+      size: "1024x1024",
+    });
+
+    // return res.status(201).json({});
+    return res.status(201).json(response.data[0]);
+
+    // res.setHeader("Content-Type", "image/png");
+    // return res.send(new_img_buffer);
+  } catch (error) {
+    throw error;
+  } finally {
     try {
-      const imagePath = req.file.path;
-
-      const bufferInput = fs.readFileSync(imagePath);
-
-      const bufferGBA = await sharp(bufferInput)
-        .resize(1024, 1024, {
-          fit: "cover",
-        })
-        .ensureAlpha()
-        .toFormat("png")
-        .toBuffer();
-
-      const { fileTypeFromBuffer } = await loadEsm<typeof import("file-type")>(
-        "file-type"
-      );
-
-      const fileType = await fileTypeFromBuffer(bufferGBA);
-
-      const [, file_extension] = (fileType?.mime ?? "/").split("/");
-
-      pngPath = `${mainConfig.temp_folder}/${uuid()}.${file_extension}`;
-
-      fs.writeFileSync(pngPath, bufferGBA);
-
-      const buffer = fs.createReadStream(pngPath);
-
-      // prompt: "Transforme essa imagem em um estilo cyberpunk vibrante",
-
-      const response = await openai.images.edit({
-        image: buffer,
-        prompt: "Transforme essa foto em ghibli",
-        // model: "dall-e-2",
-        // n: 1,
-        size: "1024x1024",
-      });
-
-      const stylizedImageUrl = response.data[0].url;
-
-      // Remove a imagem original do servidor
-      try {
-        // await fs.promises.unlink(imagePath);
-      } catch {
-        console.log("Error deleting original image 1");
-      }
-
-      try {
-        // await fs.promises.unlink(pngPath);
-      } catch {
-        console.log("Error deleting original image 2");
-      }
-
-      // return res.status(201).json({});
-      res.status(201).json({ stylizedImageUrl });
-
-      // res.setHeader("Content-Type", "image/png");
-      // return res.send(bufferGBA);
-    } catch (error) {
-      try {
-        await fs.promises.unlink(req.file.path);
-      } catch {
-        console.log("Error deleting original image 3");
-      }
-
-      if (pngPath.length > 0) {
-        try {
-          // await fs.promises.unlink(pngPath);
-        } catch {
-          console.log("Error deleting original image 4");
-        }
-      }
-
-      throw error;
+      await fs.promises.unlink(req.file.path);
+    } catch {
+      console.log("Error deleting original image 3");
     }
-  } else {
-    res.status(400).json({ error: "Image not found" });
+
+    if (new_img_path.length > 0) {
+      try {
+        // await fs.promises.unlink(new_img_path);
+      } catch {
+        console.log("Error deleting original image 4");
+      }
+    }
+
+    if (mask_path.length > 0) {
+      try {
+        // await fs.promises.unlink(new_img_path);
+      } catch {
+        console.log("Error deleting original image 4");
+      }
+    }
   }
 });
 
